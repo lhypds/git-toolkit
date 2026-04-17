@@ -1,9 +1,27 @@
 #!/usr/bin/env bash
+# macOS double-clickable command wrapper for recursively-pull-repos.sh
+# If the system bash is older than 4 (macOS ships bash 3.2), try to re-exec
+# with a Homebrew-installed bash if available.
+if [ -n "${BASH_VERSINFO:-}" ]; then
+  if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+    for candidate in /opt/homebrew/bin/bash /usr/local/bin/bash /usr/local/bin/bash4 /usr/local/bin/bash5; do
+      if [ -x "$candidate" ]; then
+        exec "$candidate" "$0" "$@"
+      fi
+    done
+  fi
+fi
+
 # Recursively find git repositories (directories containing a .git folder)
 # and run `git pull` in each one. Supports a dry-run mode.
 
 set -euo pipefail
 IFS=$'\n\t'
+
+# Ensure the script runs from its own directory so double-clicking executes
+# relative to where the `.command` file lives.
+script_dir="$(cd "$(dirname "$0")" && pwd -P)"
+cd "$script_dir" || { echo "Failed to change directory to $script_dir" >&2; exit 1; }
 
 DRY_RUN=0
 
@@ -33,17 +51,14 @@ done
 
 echo "Searching for git repositories under: $(pwd)"
 
-# Collect .git directories (prune to avoid descending into .git itself)
-mapfile -t GIT_DIRS < <(find . -type d -name .git -prune 2>/dev/null)
-
-if [ ${#GIT_DIRS[@]} -eq 0 ]; then
-	echo "No git repositories found."
-	exit 0
-fi
-
+# Iterate over found .git directories without using 'mapfile' (more portable).
+found=0
 failures=0
 
-for g in "${GIT_DIRS[@]}"; do
+while IFS= read -r g; do
+	# Skip empty lines
+	[ -z "$g" ] && continue
+	found=1
 	repo_dir=$(dirname "$g")
 	# Resolve to an absolute path to make output clearer
 	if repo_abs=$(cd "$repo_dir" 2>/dev/null && pwd -P); then
@@ -55,23 +70,27 @@ for g in "${GIT_DIRS[@]}"; do
 	cmd=(git -C "$repo_dir" pull --recurse-submodules --autostash)
 
 	if [ "$DRY_RUN" -eq 1 ]; then
-		printf "[dry-run] %s\n" "${cmd[*]}"
+		echo "[dry-run] $(printf '%s ' "${cmd[@]}")"
 		continue
 	fi
 
-	echo "Running: ${cmd[*]}"
+	echo "Running: $(printf '%s ' "${cmd[@]}")"
 	if "${cmd[@]}"; then
 		echo "OK: $repo_dir"
 	else
 		echo "ERROR: git pull failed for $repo_dir" >&2
 		failures=$((failures + 1))
 	fi
-done
+done < <(find . -type d -name .git -prune 2>/dev/null)
 
-if [ $failures -gt 0 ]; then
-	echo "\nFinished with $failures failures." >&2
-	exit 2
+if [ "$found" -eq 0 ]; then
+	echo "No git repositories found."
+	exit 0
 fi
 
-echo "\nAll repositories updated successfully."
+if [ $failures -gt 0 ]; then
+    printf "\nFinished with %d failures.\n" "$failures" >&2
+    exit 2
+fi
 
+printf "\nAll repositories updated successfully.\n"
