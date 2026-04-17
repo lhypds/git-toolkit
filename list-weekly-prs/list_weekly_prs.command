@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Script to list PRs from author lhypds during the week before last, grouped by date
+# Script to list PRs from author lhypds for a chosen week, grouped by date
 # Repository: linktivity/ars-neo-miniapp
-# Usage: ./list_last_last_week_prs.command [-v]
+# Usage: ./list_prs_by_week.command [-v]
 #   -v: verbose mode (show PR number, state, and URL)
 
 # Constants
@@ -14,21 +14,49 @@ if [[ "$1" == "-v" ]]; then
     VERBOSE=true
 fi
 
-echo "=== PRs by lhypds - Week Before Last ==="
+# Ask user how many weeks ago
+echo "=== PRs by lhypds ==="
 echo "Repository: $REPO"
 echo ""
+read -p "How many weeks ago? (0 = current week, 1 = last week, 2 = week before last, ...): " weeks_ago
 
-# Get the start and end of last week (Monday to Sunday)
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS
-    week_start=$(date -v-Mon -v-14d +%Y-%m-%d)
-    week_end=$(date -v-Mon -v-8d +%Y-%m-%d)
-else
-    # Linux
-    week_start=$(date -d "last monday -14 days" +%Y-%m-%d)
-    week_end=$(date -d "last monday -8 days" +%Y-%m-%d)
+# Validate input
+if ! [[ "$weeks_ago" =~ ^[0-9]+$ ]]; then
+    echo "Error: Please enter a non-negative integer."
+    read -p "Press Enter to exit..."
+    exit 1
 fi
 
+# Calculate week range
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS
+    offset_start=$(( weeks_ago * 7 ))
+    offset_end=$(( offset_start - 6 ))
+    week_start=$(date -v-Mon -v-${offset_start}d +%Y-%m-%d)
+    if [ "$weeks_ago" -eq 0 ]; then
+        week_end=$(date +%Y-%m-%d)
+    else
+        week_end=$(date -v-Mon -v-${offset_end}d +%Y-%m-%d)
+    fi
+else
+    # Linux
+    offset_start=$(( weeks_ago * 7 ))
+    offset_end=$(( (weeks_ago - 1) * 7 ))
+    week_start=$(date -d "last monday -${offset_start} days" +%Y-%m-%d)
+    if [ "$weeks_ago" -eq 0 ]; then
+        week_end=$(date +%Y-%m-%d)
+    else
+        week_end=$(date -d "last monday -${offset_end} days" +%Y-%m-%d)
+    fi
+fi
+
+if [ "$weeks_ago" -eq 0 ]; then
+    echo ""
+    echo "=== PRs by lhypds - Current Week ==="
+else
+    echo ""
+    echo "=== PRs by lhypds - $weeks_ago week(s) ago ==="
+fi
 echo "Week: $week_start to $week_end"
 echo ""
 
@@ -40,13 +68,12 @@ if ! command -v gh &> /dev/null; then
     exit 1
 fi
 
-# Get PRs from the author created last week
-# Using --search to filter by date range and author
+# Get PRs from the author for the chosen week
 prs=$(gh pr list -R "$REPO" --state all --search "author:lhypds created:$week_start..$week_end" --json number,title,createdAt,url,state --limit 100 2>&1)
 
 # Check if the command was successful
 if [ $? -ne 0 ]; then
-    echo "Error fetching PRs. Make sure you're in a GitHub repository or specify one with -R owner/repo"
+    echo "Error fetching PRs. Make sure you're authenticated with GitHub CLI."
     echo ""
     echo "Error details:"
     echo "$prs"
@@ -73,7 +100,7 @@ else
 fi
 
 if [ $? -ne 0 ]; then
-    echo "No PRs found for author lhypds during the week before last."
+    echo "No PRs found for author lhypds during the selected week."
 fi
 
 echo ""
