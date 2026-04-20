@@ -12,4 +12,4 @@ REPO="linktivity/ars-neo-miniapp,linktivity/wechat-mini-app"
 cd "$SCRIPT_WORKING_DIR"
 
 # Execute the script (example)
-bash "$SCRIPT_ABS_PATH" --repo="$REPO" "$@"
+bash "$SCRIPT_ABS_PATH" --repos="$REPO" "$@"
