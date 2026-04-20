@@ -1,19 +1,22 @@
 #!/bin/bash
 
 # Script to list PRs from author lhypds for a chosen week, grouped by date
-# Usage: ./list_weekly_prs.sh [--repo=owner/repo] [-v]
-#   --repo=owner/repo : GitHub repository to query (default: linktivity/ars-neo-miniapp)
-#   -v                : verbose mode (show PR number, state, and URL)
+# Usage: ./list_weekly_prs.sh [--repo=owner/repo] [--repos=owner/repo1,owner/repo2] [-v]
+#   --repo=owner/repo               : single GitHub repository to query
+#   --repos=owner/repo1,owner/repo2 : comma-separated list of repositories to query
+#   -v                              : verbose mode (show PR number, state, and URL)
 
-# Defaults
-REPO="linktivity/ars-neo-miniapp"
+REPOS=()
 VERBOSE=false
 
 # Parse flags
 for arg in "$@"; do
     case "$arg" in
         --repo=*)
-            REPO="${arg#--repo=}"
+            REPOS=("${arg#--repo=}")
+            ;;
+        --repos=*)
+            IFS=',' read -ra REPOS <<< "${arg#--repos=}"
             ;;
         -v)
             VERBOSE=true
@@ -21,9 +24,16 @@ for arg in "$@"; do
     esac
 done
 
+# Validate repos
+if [ ${#REPOS[@]} -eq 0 ]; then
+    echo "Error: No repositories specified. Use --repo=owner/repo or --repos=owner/repo1,owner/repo2"
+    read -p "Press Enter to exit..."
+    exit 1
+fi
+
 # Ask user how many weeks ago
 echo "=== PRs by lhypds ==="
-echo "Repository: $REPO"
+echo "Repositories: ${REPOS[*]}"
 echo ""
 read -p "How many weeks ago? (0 = current week, 1 = last week, 2 = week before last, ...): " weeks_ago
 
@@ -75,40 +85,45 @@ if ! command -v gh &> /dev/null; then
     exit 1
 fi
 
-# Get PRs from the author for the chosen week
-prs=$(gh pr list -R "$REPO" --state all --search "author:lhypds created:$week_start..$week_end" --json number,title,createdAt,url,state --limit 100 2>&1)
+# Get PRs from the author for the chosen week, for each repo
+for REPO in "${REPOS[@]}"; do
+    echo "--- $REPO ---"
+    prs=$(gh pr list -R "$REPO" --state all --search "author:lhypds created:$week_start..$week_end" --json number,title,createdAt,url,state --limit 100 2>&1)
 
-# Check if the command was successful
-if [ $? -ne 0 ]; then
-    echo "Error fetching PRs. Make sure you're authenticated with GitHub CLI."
+    # Check if the command was successful
+    if [ $? -ne 0 ]; then
+        echo "Error fetching PRs for $REPO. Make sure you're authenticated with GitHub CLI."
+        echo ""
+        echo "Error details:"
+        echo "$prs"
+        echo ""
+        continue
+    fi
+
+    # Parse and group by date
+    if [ "$VERBOSE" = true ]; then
+        result=$(echo "$prs" | jq -r '
+          group_by(.createdAt | split("T")[0]) |
+          .[] |
+          "Date: \(.[0].createdAt | split("T")[0])\n" +
+          (map("  • #\(.number) [\(.state)]: \(.title)\n    \(.url)") | join("\n")) + "\n"
+        ')
+    else
+        result=$(echo "$prs" | jq -r '
+          group_by(.createdAt | split("T")[0]) |
+          .[] |
+          "Date: \(.[0].createdAt | split("T")[0])\n" +
+          (map("  • \(.title)") | join("\n")) + "\n"
+        ')
+    fi
+
+    if [ -z "$result" ]; then
+        echo "No PRs found for author lhypds during the selected week."
+    else
+        echo "$result"
+    fi
     echo ""
-    echo "Error details:"
-    echo "$prs"
-    echo ""
-    read -p "Press Enter to exit..."
-    exit 1
-fi
-
-# Parse and group by date
-if [ "$VERBOSE" = true ]; then
-    echo "$prs" | jq -r '
-      group_by(.createdAt | split("T")[0]) |
-      .[] |
-      "Date: \(.[0].createdAt | split("T")[0])\n" +
-      (map("  • #\(.number) [\(.state)]: \(.title)\n    \(.url)") | join("\n")) + "\n"
-    '
-else
-    echo "$prs" | jq -r '
-      group_by(.createdAt | split("T")[0]) |
-      .[] |
-      "Date: \(.[0].createdAt | split("T")[0])\n" +
-      (map("  • \(.title)") | join("\n")) + "\n"
-    '
-fi
-
-if [ $? -ne 0 ]; then
-    echo "No PRs found for author lhypds during the selected week."
-fi
+done
 
 echo ""
 read -p "Press Enter to exit..."
