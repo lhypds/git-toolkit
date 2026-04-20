@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # Script to list PRs from author lhypds for a chosen week, grouped by date
-# Usage: ./list_weekly_prs.sh [--repo=owner/repo] [--repos=owner/repo1,owner/repo2] [-v]
-#   --repo=owner/repo               : single GitHub repository to query
+# Usage: ./list_weekly_prs.sh [--repos=owner/repo1,owner/repo2] [-v]
 #   --repos=owner/repo1,owner/repo2 : comma-separated list of repositories to query
 #   -v                              : verbose mode (show PR number, state, and URL)
 
@@ -12,9 +11,6 @@ VERBOSE=false
 # Parse flags
 for arg in "$@"; do
     case "$arg" in
-        --repo=*)
-            REPOS=("${arg#--repo=}")
-            ;;
         --repos=*)
             IFS=',' read -ra REPOS <<< "${arg#--repos=}"
             ;;
@@ -26,7 +22,7 @@ done
 
 # Validate repos
 if [ ${#REPOS[@]} -eq 0 ]; then
-    echo "Error: No repositories specified. Use --repo=owner/repo or --repos=owner/repo1,owner/repo2"
+    echo "Error: No repositories specified. Use --repos=owner/repo1,owner/repo2"
     read -p "Press Enter to exit..."
     exit 1
 fi
@@ -35,7 +31,11 @@ fi
 echo "=== PRs by lhypds ==="
 echo "Repositories: ${REPOS[*]}"
 echo ""
-read -p "How many weeks ago? (0 = current week, 1 = last week, 2 = week before last, ...): " weeks_ago
+read -p "How many weeks ago? (default: 1, 0 = current week, 1 = last week, 2 = week before last, ...): " weeks_ago
+
+if [ -z "$weeks_ago" ]; then
+    weeks_ago=1
+fi
 
 # Validate input
 if ! [[ "$weeks_ago" =~ ^[0-9]+$ ]]; then
